@@ -5,7 +5,6 @@ using System;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace WebApplication1.Controllers
 {
@@ -34,7 +33,7 @@ namespace WebApplication1.Controllers
         [HttpGet]
         public IEnumerable<string> Get()
         {
-            return GetAddresses().Select(s=>s.ToString());
+            return GetAddresses().Select(s => s.ToString());
         }
 
         /// <summary>
@@ -45,34 +44,41 @@ namespace WebApplication1.Controllers
         [HttpPost]
         public async Task<IActionResult> Post([FromQuery] string hookUrl)
         {          
-            foreach (var item in GetAddresses())
+            foreach (IPAddress address in GetAddresses())
             {
-                var resp = await GetHttpClient(item).PostAsync(hookUrl, null);
-
+                // TODO: not sure if we should create a client per request; check the guidelines
+                HttpClient client = CreateHttpClient(address);
+                HttpResponseMessage resp = await client.PostAsync(hookUrl, null);
             }
+
             return new OkResult();
         }
-        private IEnumerable<IPAddress>  GetAddresses()
+
+        private IReadOnlyList<IPAddress> GetAddresses()
         {
-             if (!System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable())
+            if (NetworkInterface.GetIsNetworkAvailable() is false)
             {
-                return null;
+                return Array.Empty<IPAddress>();
             }
 
             IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
 
-            return host.AddressList.Where(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+            IReadOnlyList<IPAddress> addresses =
+                host.AddressList.Where(ip => ip.AddressFamily == AddressFamily.InterNetwork).ToList();
+
+            return addresses;
         }
-        private HttpClient GetHttpClient(IPAddress address)
+
+        private HttpClient CreateHttpClient(IPAddress address)
         {
             if (IPAddress.Any.Equals(address))
                 return new HttpClient();
 
-            SocketsHttpHandler handler = new SocketsHttpHandler();
+            SocketsHttpHandler handler = new();
 
             handler.ConnectCallback = async (context, cancellationToken) =>
             {
-                Socket socket = new Socket(SocketType.Stream, ProtocolType.Tcp);
+                Socket socket = new (SocketType.Stream, ProtocolType.Tcp);
 
                 socket.Bind(new IPEndPoint(address, 0));
 
@@ -94,6 +100,5 @@ namespace WebApplication1.Controllers
 
             return new HttpClient(handler);
         }
-
     }
 }
